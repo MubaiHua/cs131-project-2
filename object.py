@@ -326,7 +326,11 @@ class ObjectDef:
 
     # (return expression) where expresion could be a value, or a (+ ...)
     def __execute_return(self, env, code, method_name, inherit_level):
-        method_info = self.methods[method_name]
+        if inherit_level == -1:
+            method_info = self.methods[method_name]
+        else:
+            method_info = self.inherit_methods[inherit_level][method_name]
+
         method_type = method_info.method_type
         if len(code) == 1:
             # [return] with no return expression
