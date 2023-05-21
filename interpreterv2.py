@@ -3,10 +3,10 @@ The module that brings it all together! We intentionally keep this as small as p
 delegating functionality to various modules.
 """
 
-from classv1 import ClassDef
+from class_def import ClassDef
 from intbase import InterpreterBase, ErrorType
 from bparser import BParser
-from objectv1 import ObjectDef
+from object import ObjectDef
 
 
 class Interpreter(InterpreterBase):
@@ -26,6 +26,7 @@ class Interpreter(InterpreterBase):
         Delegates parsing to the provided BParser class in bparser.py.
         """
         status, parsed_program = BParser.parse(program)
+        print(parsed_program)
         if not status:
             super().error(
                 ErrorType.SYNTAX_ERROR, f"Parse error on program: {parsed_program}"
@@ -74,3 +75,30 @@ class Interpreter(InterpreterBase):
                         item[0].line_num,
                     )
                 self.class_index[item[1]] = ClassDef(item, self)
+
+    def get_class_list(self):
+        return self.class_index
+
+
+def read_txt_file(file_path):
+    """
+    Reads a text file and returns each line as a list of strings.
+
+    Parameters:
+        file_path (str): The path to the text file.
+
+    Returns:
+        list: A list of strings, where each string is a line from the text file.
+    """
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+        lines = [line.strip() for line in lines]
+    return lines
+
+
+# Testing the interpreter
+interpreter = Interpreter()
+brewin_program = read_txt_file(
+    "/home/mubai/CS131/cs131-project-2/program.txt"
+)  # Provide a valid Brewin program here
+interpreter.run(brewin_program)

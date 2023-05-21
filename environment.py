@@ -22,10 +22,10 @@ class EnvironmentManager:
         if symbol in self.environment:
             return self.environment[symbol]
 
-        return None
+        return (None, None, None)
 
-    def set(self, symbol, value):
+    def set(self, symbol, value, type, class_type=None):
         """
         Set data associated with a variable name.
         """
-        self.environment[symbol] = value
+        self.environment[symbol] = (value, type, class_type)

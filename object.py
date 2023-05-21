@@ -3,10 +3,10 @@ Module handling the operations of an object. This contains the meat
 of the code to execute various instructions.
 """
 
-from env_v1 import EnvironmentManager
+from environment import EnvironmentManager
 from intbase import InterpreterBase, ErrorType
-from type_valuev1 import create_value
-from type_valuev1 import Type, Value
+from type_value import create_value, create_infered_value
+from type_value import Type, Value
 
 
 class ObjectDef:
@@ -47,9 +47,29 @@ class ObjectDef:
             EnvironmentManager()
         )  # maintains lexical environment for function; just params for now
         for formal, actual in zip(method_info.formal_params, actual_params):
-            env.set(formal, actual)
+            if formal.param_type != actual.type():
+                self.interpreter.error(
+                    ErrorType.TYPE_ERROR,
+                    f"Parameter {formal.param_name} does not have the same type as the assigned value {actual.value()}",
+                    line_num_of_caller,
+                )
+
+            if formal.param_type == Type.CLASS:
+                if actual.value() != None:  # if the value is not null
+                    if formal.param_class_type != actual.class_type():
+                        self.interpreter.error(
+                            ErrorType.TYPE_ERROR,
+                            f"Value {actual.value()} does not match the {formal.param_name} type",
+                            line_num_of_caller,
+                        )
+
+            env.set(
+                formal.param_name, actual, formal.param_type, formal.param_class_type
+            )
         # since each method has a single top-level statement, execute it.
-        status, return_value = self.__execute_statement(env, method_info.code)
+        status, return_value = self.__execute_statement(
+            env, method_info.code, method_name
+        )
         # if the method explicitly used the (return expression) statement to return a value, then return that
         # value back to the caller
         if status == ObjectDef.STATUS_RETURN:
@@ -57,7 +77,7 @@ class ObjectDef:
         # The method didn't explicitly return a value, so return a value of type nothing
         return Value(InterpreterBase.NOTHING_DEF)
 
-    def __execute_statement(self, env, code):
+    def __execute_statement(self, env, code, method_name):
         """
         returns (status_code, return_value) where:
         - status_code indicates if the next statement includes a return
@@ -69,17 +89,17 @@ class ObjectDef:
             print(f"{code[0].line_num}: {code}")
         tok = code[0]
         if tok == InterpreterBase.BEGIN_DEF:
-            return self.__execute_begin(env, code)
+            return self.__execute_begin(env, code, method_name)
         if tok == InterpreterBase.SET_DEF:
             return self.__execute_set(env, code)
         if tok == InterpreterBase.IF_DEF:
-            return self.__execute_if(env, code)
+            return self.__execute_if(env, code, method_name)
         if tok == InterpreterBase.CALL_DEF:
             return self.__execute_call(env, code)
         if tok == InterpreterBase.WHILE_DEF:
-            return self.__execute_while(env, code)
+            return self.__execute_while(env, code, method_name)
         if tok == InterpreterBase.RETURN_DEF:
-            return self.__execute_return(env, code)
+            return self.__execute_return(env, code, method_name)
         if tok == InterpreterBase.INPUT_STRING_DEF:
             return self.__execute_input(env, code, True)
         if tok == InterpreterBase.INPUT_INT_DEF:
@@ -92,9 +112,9 @@ class ObjectDef:
         )
 
     # (begin (statement1) (statement2) ... (statementn))
-    def __execute_begin(self, env, code):
+    def __execute_begin(self, env, code, method_name):
         for statement in code[1:]:
-            status, return_value = self.__execute_statement(env, statement)
+            status, return_value = self.__execute_statement(env, statement, method_name)
             if status == ObjectDef.STATUS_RETURN:
                 return (
                     status,
@@ -119,13 +139,46 @@ class ObjectDef:
         return ObjectDef.STATUS_PROCEED, None
 
     # (return expression) where expresion could be a value, or a (+ ...)
-    def __execute_return(self, env, code):
+    def __execute_return(self, env, code, method_name):
+        method_info = self.methods[method_name]
+        method_type = method_info.method_type
         if len(code) == 1:
             # [return] with no return expression
-            return ObjectDef.STATUS_RETURN, create_value(InterpreterBase.NOTHING_DEF)
-        return ObjectDef.STATUS_RETURN, self.__evaluate_expression(
-            env, code[1], code[0].line_num
-        )
+            if method_type != Type.VOID:
+                self.interpreter.error(
+                    ErrorType.TYPE_ERROR,
+                    f"{method_name} should have a return value",
+                )
+
+            value = create_value(
+                self.interpreter,
+                InterpreterBase.NOTHING_DEF,
+                InterpreterBase.NOTHING_DEF,
+            )
+            return ObjectDef.STATUS_RETURN, value
+
+        if method_type == Type.VOID:
+            self.interpreter.error(
+                ErrorType.TYPE_ERROR,
+                f"{method_name} of type void should not have a return value",
+            )
+
+        return_value = self.__evaluate_expression(env, code[1], code[0].line_num)
+        if return_value.type() != method_type:
+            self.interpreter.error(
+                ErrorType.TYPE_ERROR,
+                f"{method_name} have wrong return type",
+            )
+
+        if method_type == Type.CLASS:
+            if return_value.value() != None:
+                if method_info.method_class_type != return_value.class_type():
+                    self.interpreter.error(
+                        ErrorType.TYPE_ERROR,
+                        f"{method_name} have wrong return type",
+                    )
+
+        return ObjectDef.STATUS_RETURN, return_value
 
     # (print expression1 expression2 ...) where expresion could be a variable, value, or a (+ ...)
     def __execute_print(self, env, code):
@@ -161,54 +214,90 @@ class ObjectDef:
             self.interpreter.error(
                 ErrorType.TYPE_ERROR, "can't assign to nothing " + var_name, line_num
             )
-        param_val = env.get(var_name)
+        (param_val, param_type, param_class_type) = env.get(var_name)
         if param_val is not None:
-            env.set(var_name, value)
+            if param_type != value.type():
+                self.interpreter.error(
+                    ErrorType.TYPE_ERROR,
+                    f"{var_name} does not have the same type as the assigned value",
+                    line_num,
+                )
+
+            if param_type == Type.CLASS:
+                if value.value() != None:  # if the value is not null
+                    if param_class_type != value.class_type():
+                        self.interpreter.error(
+                            ErrorType.TYPE_ERROR,
+                            f"{var_name} does not have the same type as the assigned value",
+                            line_num,
+                        )
+
+            env.set(var_name, value, param_type, param_class_type)
             return
 
         if var_name not in self.fields:
             self.interpreter.error(
                 ErrorType.NAME_ERROR, "unknown variable " + var_name, line_num
             )
+        target_field = self.fields[var_name]
+
+        # check assignment type
+        if target_field.type() != value.type():
+            self.interpreter.error(
+                ErrorType.TYPE_ERROR,
+                f"{var_name} does not have the same type as the assigned value",
+                line_num,
+            )
+
+        # check class type of class reference
+        if target_field.type() == Type.CLASS:
+            if value.value() != None:  # if the value is not null
+                if target_field.class_type() != value.class_type():
+                    self.interpreter.error(
+                        ErrorType.TYPE_ERROR,
+                        f"{var_name} does not have the same type as the assigned value",
+                        line_num,
+                    )
+
         self.fields[var_name] = value
 
     # (if expression (statement) (statement) ) where expresion could be a boolean constant (e.g., true), member
     # variable without ()s, or a boolean expression in parens, like (> 5 a)
-    def __execute_if(self, env, code):
+    def __execute_if(self, env, code, method_name):
         condition = self.__evaluate_expression(env, code[1], code[0].line_num)
         if condition.type() != Type.BOOL:
             self.interpreter.error(
                 ErrorType.TYPE_ERROR,
-                "non-boolean if condition " + ' '.join(x for x in code[1]),
+                "non-boolean if condition " + " ".join(x for x in code[1]),
                 code[0].line_num,
             )
         if condition.value():
             status, return_value = self.__execute_statement(
-                env, code[2]
+                env, code[2], method_name
             )  # if condition was true
             return status, return_value
         if len(code) == 4:
             status, return_value = self.__execute_statement(
-                env, code[3]
+                env, code[3], method_name
             )  # if condition was false, do else
             return status, return_value
         return ObjectDef.STATUS_PROCEED, None
 
     # (while expression (statement) ) where expresion could be a boolean value, boolean member variable,
     # or a boolean expression in parens, like (> 5 a)
-    def __execute_while(self, env, code):
+    def __execute_while(self, env, code, method_name):
         while True:
             condition = self.__evaluate_expression(env, code[1], code[0].line_num)
             if condition.type() != Type.BOOL:
                 self.interpreter.error(
                     ErrorType.TYPE_ERROR,
-                    "non-boolean while condition " + ' '.join(x for x in code[1]),
+                    "non-boolean while condition " + " ".join(x for x in code[1]),
                     code[0].line_num,
                 )
             if not condition.value():  # condition is false, exit loop immediately
                 return ObjectDef.STATUS_PROCEED, None
             # condition is true, run body of while loop
-            status, return_value = self.__execute_statement(env, code[2])
+            status, return_value = self.__execute_statement(env, code[2], method_name)
             if status == ObjectDef.STATUS_RETURN:
                 return (
                     status,
@@ -221,13 +310,13 @@ class ObjectDef:
     def __evaluate_expression(self, env, expr, line_num_of_statement):
         if not isinstance(expr, list):
             # locals shadow member variables
-            val = env.get(expr)
+            (val, param_type, param_class_type) = env.get(expr)
             if val is not None:
                 return val
             if expr in self.fields:
                 return self.fields[expr]
             # need to check for variable name and get its value too
-            value = create_value(expr)
+            value = create_infered_value(expr)
             if value is not None:
                 return value
             self.interpreter.error(
@@ -299,7 +388,7 @@ class ObjectDef:
     # (new classname)
     def __execute_new_aux(self, _, code, line_num_of_statement):
         obj = self.interpreter.instantiate(code[1], line_num_of_statement)
-        return Value(Type.CLASS, obj)
+        return Value(Type.CLASS, obj, code[1])
 
     # this method is a helper used by call statements and call expressions
     # (call object_ref/me methodname p1 p2 p3)
@@ -332,7 +421,10 @@ class ObjectDef:
     def __map_fields_to_values(self):
         self.fields = {}
         for field in self.class_def.get_fields():
-            self.fields[field.field_name] = create_value(field.default_field_value)
+            value = create_value(
+                self.interpreter, field.default_field_value, field.field_type
+            )
+            self.fields[field.field_name] = value
 
     def __create_map_of_operations_to_lambdas(self):
         self.binary_op_list = [
