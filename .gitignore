@@ -137,3 +137,6 @@ initbase.py
 
 #remove test program
 program.txt
+
+#remove intbase.py
+intbase.py
