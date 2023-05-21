@@ -500,7 +500,7 @@ class ObjectDef:
     # or a boolean expression in parens, like (> 5 a)
     def __execute_while(self, env, code, method_name, inherit_level):
         while True:
-            condition = self.__evaluate_expression(env, code[1], code[0].line_num)
+            condition = self.__evaluate_expression(env, code[1], code[0].line_num, inherit_level)
             if condition.type() != Type.BOOL:
                 self.interpreter.error(
                     ErrorType.TYPE_ERROR,
@@ -592,7 +592,7 @@ class ObjectDef:
                 line_num_of_statement,
             )
         if operator in self.unary_op_list:
-            operand = self.__evaluate_expression(env, expr[1], line_num_of_statement)
+            operand = self.__evaluate_expression(env, expr[1], line_num_of_statement, inherit_level)
             if operand.type() == Type.BOOL:
                 if operator not in self.unary_ops[Type.BOOL]:
                     self.interpreter.error(
