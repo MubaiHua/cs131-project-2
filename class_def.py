@@ -55,13 +55,14 @@ class ClassDef:
     class definition: [class classname [field1 field2 ... method1 method2 ...]]
     """
 
-    def __init__(self, class_def, interpreter):
+    def __init__(self, class_name, inherit_class, class_def, interpreter):
         self.interpreter = interpreter
-        self.name = class_def[1]
+        self.name = class_name
+        self.inherit_class = inherit_class
         self.get_all_field_types()
         self.get_all_method_types()
-        self.__create_field_list(class_def[2:])
-        self.__create_method_list(class_def[2:])
+        self.__create_field_list(class_def)
+        self.__create_method_list(class_def)
 
     def get_fields(self):
         """

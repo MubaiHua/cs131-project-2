@@ -31,7 +31,7 @@ class Interpreter(InterpreterBase):
             super().error(
                 ErrorType.SYNTAX_ERROR, f"Parse error on program: {parsed_program}"
             )
-        print(parsed_program)
+        # print(parsed_program)
         self.set_class_set(parsed_program)
         self.__map_class_names_to_class_defs(parsed_program)
 
@@ -70,16 +70,41 @@ class Interpreter(InterpreterBase):
         self.class_index = {}
         for item in program:
             if item[0] == InterpreterBase.CLASS_DEF:
-                if item[1] in self.class_index:
-                    super().error(
-                        ErrorType.TYPE_ERROR,
-                        f"Duplicate class name {item[1]}",
+                class_name = item[1]
+                inherit_class = None
+                class_def_idx = 2
+                if not isinstance(item[2], list):
+                    if item[2] == InterpreterBase.INHERITS_DEF:
+                        inherit_class = item[3]
+                        class_def_idx = 4
+                    else:
+                        super().error(
+                        ErrorType.SYNTAX_ERROR,
+                        f"Invalid class definition of {class_name}",
                         item[0].line_num,
                     )
-                self.class_index[item[1]] = ClassDef(item, self)
+
+                if class_name in self.class_index:
+                    super().error(
+                        ErrorType.TYPE_ERROR,
+                        f"Duplicate class name {class_name}",
+                        item[0].line_num,
+                    )
+
+                if inherit_class!= None and inherit_class not in self.class_index:
+                    super().error(
+                        ErrorType.TYPE_ERROR,
+                        f"No class named {inherit_class} found",
+                        item[0].line_num,
+                    )
+
+                self.class_index[class_name] = ClassDef(class_name, inherit_class, item[class_def_idx:], self)
 
     def get_class_set(self):
         return self.class_set
+    
+    def get_class_dict(self):
+        return self.class_index
     
     def set_class_set(self, program):
         for item in program:
@@ -91,6 +116,18 @@ class Interpreter(InterpreterBase):
                         item[0].line_num,
                     )
                 self.class_set.add(item[1])
+
+    def is_parent_class(self, child_class_name, parent_class_name):
+        child_class_def = self.class_index[child_class_name]
+        super_class = child_class_def.inherit_class
+        while super_class is not None:  # recursively check inherit class
+            super_class_def = self.class_index[super_class]
+            if super_class_def.name == parent_class_name:
+                return True
+
+            super_class = super_class_def.inherit_class
+        
+        return False
 
 
 def read_txt_file(file_path):

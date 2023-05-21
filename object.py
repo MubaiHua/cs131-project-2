@@ -21,31 +21,118 @@ class ObjectDef:
         self.trace_output = trace_output
         self.__map_fields_to_values()
         self.__map_method_names_to_method_definitions()
+        self.__map_inherit_fields_to_values()
+        self.__map_inherit_method_names_to_method_definitions()
         self.__create_map_of_operations_to_lambdas()  # sets up maps to facilitate binary and unary operations, e.g., (+ 5 6)
 
-    def call_method(self, method_name, actual_params, line_num_of_caller):
+    def call_method(
+        self, method_name, actual_params, line_num_of_caller, inherit_level=-1
+    ):
         """
         actual_params is a list of Value objects (all parameters are passed by value).
 
         The caller passes in the line number so we can properly generate an error message.
         The error is then generated at the source (i.e., where the call is initiated).
         """
-        if method_name not in self.methods:
+        inherit_deepth = len(self.inherit_methods)
+        actual_params_len = len(actual_params)
+        list_of_actual_params_type = []
+        method_info = None
+
+        for param in actual_params:
+            if param.type() == Type.CLASS:
+                if param.value() != None:
+                    list_of_actual_params_type.append(
+                        (param.type(), param.class_type())
+                    )
+            else:
+                list_of_actual_params_type.append(param.type())
+
+        if inherit_level == -1:  # no super used
+            if method_name in self.methods:
+                if len(self.methods[method_name].formal_params) == actual_params_len:
+                    flag = True
+                    for i, formal in enumerate(self.methods[method_name].formal_params):
+                        if isinstance(list_of_actual_params_type[i], tuple):
+                            if formal.param_type != Type.CLASS:  # compare class type
+                                flag = False
+                                break
+                            if (
+                                formal.param_class_type
+                                != list_of_actual_params_type[i][1]
+                            ):
+                                if not self.interpreter.is_parent_class(
+                                    list_of_actual_params_type[i][1],
+                                    formal.param_class_type,
+                                ):
+                                    flag = False
+                                    break
+                        else:
+                            if list_of_actual_params_type[i] != formal.param_type:
+                                flag = False
+                                break
+                    if flag:
+                        method_info = self.methods[method_name]
+
+        if method_info == None:
+            if inherit_level == -1:
+                inherit_level = 0
+            while inherit_level < inherit_deepth:
+                if method_name not in self.inherit_methods[inherit_level]:
+                    inherit_level += 1
+                    continue
+                else:
+                    if (
+                        len(
+                            self.inherit_methods[inherit_level][
+                                method_name
+                            ].formal_params
+                        )
+                        == actual_params_len
+                    ):
+                        flag = True
+                        for i, formal in enumerate(
+                            self.inherit_methods[inherit_level][
+                                method_name
+                            ].formal_params
+                        ):
+                            if isinstance(list_of_actual_params_type[i], tuple):
+                                if (
+                                    formal.param_type != Type.CLASS
+                                ):  # compare class type
+                                    flag = False
+                                    break
+                                if (
+                                    formal.param_class_type
+                                    != list_of_actual_params_type[i][1]
+                                ):
+                                    if not self.interpreter.is_parent_class(
+                                        list_of_actual_params_type[i][1],
+                                        formal.param_class_type,
+                                    ):
+                                        flag = False
+                                        break
+                            else:
+                                if list_of_actual_params_type[i] != formal.param_type:
+                                    flag = False
+                                    break
+                        if flag:
+                            method_info = self.inherit_methods[inherit_level][method_name]
+                            break
+                    else:
+                        inherit_level += 1
+
+        if method_info == None:  # if no matching method found
             self.interpreter.error(
                 ErrorType.NAME_ERROR,
-                "unknown method " + method_name,
+                f"Unknown method {method_name}",
                 line_num_of_caller,
             )
-        method_info = self.methods[method_name]
-        if len(actual_params) != len(method_info.formal_params):
-            self.interpreter.error(
-                ErrorType.TYPE_ERROR,
-                "invalid number of parameters in call to " + method_name,
-                line_num_of_caller,
-            )
+
         env = (
             EnvironmentManager()
         )  # maintains lexical environment for function; just params for now
+
         for formal, actual in zip(method_info.formal_params, actual_params):
             if formal.param_type != actual.type():
                 self.interpreter.error(
@@ -68,7 +155,7 @@ class ObjectDef:
             )
         # since each method has a single top-level statement, execute it.
         status, return_value = self.__execute_statement(
-            env, method_info.code, method_name
+            env, method_info.code, method_name, inherit_level
         )
         # if the method explicitly used the (return expression) statement to return a value, then return that
         # value back to the caller
@@ -88,7 +175,7 @@ class ObjectDef:
         if method_type == Type.CLASS:
             return Value(Type.CLASS, None, None)  # null value
 
-    def __execute_statement(self, env, code, method_name):
+    def __execute_statement(self, env, code, method_name, inherit_level):
         """
         returns (status_code, return_value) where:
         - status_code indicates if the next statement includes a return
@@ -100,31 +187,31 @@ class ObjectDef:
             print(f"{code[0].line_num}: {code}")
         tok = code[0]
         if tok == InterpreterBase.BEGIN_DEF:
-            return self.__execute_begin(env, code, method_name)
+            return self.__execute_begin(env, code, method_name, inherit_level)
         if tok == InterpreterBase.SET_DEF:
-            return self.__execute_set(env, code)
+            return self.__execute_set(env, code, inherit_level)
         if tok == InterpreterBase.IF_DEF:
-            return self.__execute_if(env, code, method_name)
+            return self.__execute_if(env, code, method_name, inherit_level)
         if tok == InterpreterBase.CALL_DEF:
-            return self.__execute_call(env, code)
+            return self.__execute_call(env, code, inherit_level)
         if tok == InterpreterBase.WHILE_DEF:
-            return self.__execute_while(env, code, method_name)
+            return self.__execute_while(env, code, method_name, inherit_level)
         if tok == InterpreterBase.RETURN_DEF:
-            return self.__execute_return(env, code, method_name)
+            return self.__execute_return(env, code, method_name, inherit_level)
         if tok == InterpreterBase.INPUT_STRING_DEF:
-            return self.__execute_input(env, code, True)
+            return self.__execute_input(env, code, True, inherit_level)
         if tok == InterpreterBase.INPUT_INT_DEF:
-            return self.__execute_input(env, code, False)
+            return self.__execute_input(env, code, False, inherit_level)
         if tok == InterpreterBase.PRINT_DEF:
-            return self.__execute_print(env, code)
+            return self.__execute_print(env, code, inherit_level)
         if tok == InterpreterBase.LET_DEF:
-            return self.__execute_let(env, code, method_name)
+            return self.__execute_let(env, code, method_name, inherit_level)
 
         self.interpreter.error(
             ErrorType.SYNTAX_ERROR, "unknown statement " + tok, tok.line_num
         )
 
-    def __execute_let(self, outside_env, code, method_name):
+    def __execute_let(self, outside_env, code, method_name, inherit_level):
         def get_local_variable_type(local_variable_type):
             if local_variable_type == InterpreterBase.INT_DEF:
                 return Type.INT
@@ -196,7 +283,9 @@ class ObjectDef:
             added_local_variables_set.add(local_variable_name)
 
         for statement in code[2:]:
-            status, return_value = self.__execute_statement(env, statement, method_name)
+            status, return_value = self.__execute_statement(
+                env, statement, method_name, inherit_level
+            )
             if status == ObjectDef.STATUS_RETURN:
                 return (
                     status,
@@ -207,9 +296,11 @@ class ObjectDef:
         return ObjectDef.STATUS_PROCEED, None
 
     # (begin (statement1) (statement2) ... (statementn))
-    def __execute_begin(self, env, code, method_name):
+    def __execute_begin(self, env, code, method_name, inherit_level):
         for statement in code[1:]:
-            status, return_value = self.__execute_statement(env, statement, method_name)
+            status, return_value = self.__execute_statement(
+                env, statement, method_name, inherit_level
+            )
             if status == ObjectDef.STATUS_RETURN:
                 return (
                     status,
@@ -222,19 +313,19 @@ class ObjectDef:
     # (call object_ref/me methodname param1 param2 param3)
     # where params are expressions, and expresion could be a value, or a (+ ...)
     # statement version of a method call; there's also an expression version of a method call below
-    def __execute_call(self, env, code):
+    def __execute_call(self, env, code, inherit_level):
         return ObjectDef.STATUS_PROCEED, self.__execute_call_aux(
-            env, code, code[0].line_num
+            env, code, code[0].line_num, inherit_level
         )
 
     # (set varname expression), where expresion could be a value, or a (+ ...)
-    def __execute_set(self, env, code):
-        val = self.__evaluate_expression(env, code[2], code[0].line_num)
-        self.__set_variable_aux(env, code[1], val, code[0].line_num)
+    def __execute_set(self, env, code, inherit_level):
+        val = self.__evaluate_expression(env, code[2], code[0].line_num, inherit_level)
+        self.__set_variable_aux(env, code[1], val, code[0].line_num, inherit_level)
         return ObjectDef.STATUS_PROCEED, None
 
     # (return expression) where expresion could be a value, or a (+ ...)
-    def __execute_return(self, env, code, method_name):
+    def __execute_return(self, env, code, method_name, inherit_level):
         method_info = self.methods[method_name]
         method_type = method_info.method_type
         if len(code) == 1:
@@ -258,7 +349,9 @@ class ObjectDef:
                 code[0].line_num,
             )
 
-        return_value = self.__evaluate_expression(env, code[1], code[0].line_num)
+        return_value = self.__evaluate_expression(
+            env, code[1], code[0].line_num, inherit_level
+        )
         if return_value.type() != method_type:
             self.interpreter.error(
                 ErrorType.TYPE_ERROR,
@@ -278,11 +371,13 @@ class ObjectDef:
         return ObjectDef.STATUS_RETURN, return_value
 
     # (print expression1 expression2 ...) where expresion could be a variable, value, or a (+ ...)
-    def __execute_print(self, env, code):
+    def __execute_print(self, env, code, inherit_level):
         output = ""
         for expr in code[1:]:
             # TESTING NOTE: Will not test printing of object references
-            term = self.__evaluate_expression(env, expr, code[0].line_num)
+            term = self.__evaluate_expression(
+                env, expr, code[0].line_num, inherit_level
+            )
             val = term.value()
             typ = term.type()
             if typ == Type.BOOL:
@@ -293,19 +388,19 @@ class ObjectDef:
         return ObjectDef.STATUS_PROCEED, None
 
     # (inputs target_variable) or (inputi target_variable) sets target_variable to input string/int
-    def __execute_input(self, env, code, get_string):
+    def __execute_input(self, env, code, get_string, inherit_level):
         inp = self.interpreter.get_input()
         if get_string:
             val = Value(Type.STRING, inp)
         else:
             val = Value(Type.INT, int(inp))
 
-        self.__set_variable_aux(env, code[1], val, code[0].line_num)
+        self.__set_variable_aux(env, code[1], val, code[0].line_num, inherit_level)
         return ObjectDef.STATUS_PROCEED, None
 
     # helper method used to set either parameter variables or member fields; parameters currently shadow
     # member fields
-    def __set_variable_aux(self, env, var_name, value, line_num):
+    def __set_variable_aux(self, env, var_name, value, line_num, inherit_level):
         # parameter shadows fields
         if value.type() == Type.NOTHING:
             self.interpreter.error(
@@ -323,20 +418,30 @@ class ObjectDef:
             if param_type == Type.CLASS:
                 if value.value() != None:  # if the value is not null
                     if param_class_type != value.class_type():
-                        self.interpreter.error(
-                            ErrorType.TYPE_ERROR,
-                            f"{var_name} does not have the same type as the assigned value",
-                            line_num,
-                        )
+                        if not self.interpreter.is_parent_class(
+                            value.class_type(), param_class_type
+                        ):
+                            self.interpreter.error(
+                                ErrorType.TYPE_ERROR,
+                                f"{var_name} does not have the same type as the assigned value",
+                                line_num,
+                            )
 
             env.set(var_name, value, param_type, param_class_type)
             return
 
-        if var_name not in self.fields:
-            self.interpreter.error(
-                ErrorType.NAME_ERROR, "unknown variable " + var_name, line_num
-            )
-        target_field = self.fields[var_name]
+        if inherit_level == -1:
+            if var_name not in self.fields:
+                self.interpreter.error(
+                    ErrorType.NAME_ERROR, "unknown variable " + var_name, line_num
+                )
+            target_field = self.fields[var_name]
+        else:
+            if var_name not in self.inherit_fields[inherit_level]:
+                self.interpreter.error(
+                    ErrorType.NAME_ERROR, "unknown variable " + var_name, line_num
+                )
+            target_field = self.inherit_fields[inherit_level][var_name]
 
         # check assignment type
         if target_field.type() != value.type():
@@ -350,18 +455,25 @@ class ObjectDef:
         if target_field.type() == Type.CLASS:
             if value.value() != None:  # if the value is not null
                 if target_field.class_type() != value.class_type():
-                    self.interpreter.error(
-                        ErrorType.TYPE_ERROR,
-                        f"{var_name} does not have the same type as the assigned value",
-                        line_num,
-                    )
-
-        self.fields[var_name] = value
+                    if not self.interpreter.is_parent_class(
+                        value.class_type(), target_field.class_type()
+                    ):
+                        self.interpreter.error(
+                            ErrorType.TYPE_ERROR,
+                            f"{var_name} does not have the same type as the assigned value",
+                            line_num,
+                        )
+        if inherit_level == -1:
+            self.fields[var_name] = value
+        else:
+            self.inherit_fields[inherit_level][var_name] = value
 
     # (if expression (statement) (statement) ) where expresion could be a boolean constant (e.g., true), member
     # variable without ()s, or a boolean expression in parens, like (> 5 a)
-    def __execute_if(self, env, code, method_name):
-        condition = self.__evaluate_expression(env, code[1], code[0].line_num)
+    def __execute_if(self, env, code, method_name, inherit_level):
+        condition = self.__evaluate_expression(
+            env, code[1], code[0].line_num, inherit_level
+        )
         if condition.type() != Type.BOOL:
             self.interpreter.error(
                 ErrorType.TYPE_ERROR,
@@ -370,19 +482,19 @@ class ObjectDef:
             )
         if condition.value():
             status, return_value = self.__execute_statement(
-                env, code[2], method_name
+                env, code[2], method_name, inherit_level
             )  # if condition was true
             return status, return_value
         if len(code) == 4:
             status, return_value = self.__execute_statement(
-                env, code[3], method_name
+                env, code[3], method_name, inherit_level
             )  # if condition was false, do else
             return status, return_value
         return ObjectDef.STATUS_PROCEED, None
 
     # (while expression (statement) ) where expresion could be a boolean value, boolean member variable,
     # or a boolean expression in parens, like (> 5 a)
-    def __execute_while(self, env, code, method_name):
+    def __execute_while(self, env, code, method_name, inherit_level):
         while True:
             condition = self.__evaluate_expression(env, code[1], code[0].line_num)
             if condition.type() != Type.BOOL:
@@ -394,7 +506,9 @@ class ObjectDef:
             if not condition.value():  # condition is false, exit loop immediately
                 return ObjectDef.STATUS_PROCEED, None
             # condition is true, run body of while loop
-            status, return_value = self.__execute_statement(env, code[2], method_name)
+            status, return_value = self.__execute_statement(
+                env, code[2], method_name, inherit_level
+            )
             if status == ObjectDef.STATUS_RETURN:
                 return (
                     status,
@@ -404,14 +518,19 @@ class ObjectDef:
     # given an expression, return a Value object with the expression's evaluated result
     # expressions could be: constants (true, 5, "blah"), variables (e.g., x), arithmetic/string/logical expressions
     # like (+ 5 6), (+ "abc" "def"), (> a 5), method calls (e.g., (call me foo)), or instantiations (e.g., new dog_class)
-    def __evaluate_expression(self, env, expr, line_num_of_statement):
+    def __evaluate_expression(self, env, expr, line_num_of_statement, inherit_level):
         if not isinstance(expr, list):
             # locals shadow member variables
             (val, param_type, param_class_type) = env.get(expr)
             if val is not None:
                 return val
-            if expr in self.fields:
-                return self.fields[expr]
+            if inherit_level == -1:
+                if expr in self.fields:
+                    return self.fields[expr]
+            else:
+                if expr in self.inherit_fields[inherit_level]:
+                    return self.inherit_fields[inherit_level][expr]
+
             # need to check for variable name and get its value too
             value = create_infered_value(expr)
             if value is not None:
@@ -424,8 +543,12 @@ class ObjectDef:
 
         operator = expr[0]
         if operator in self.binary_op_list:
-            operand1 = self.__evaluate_expression(env, expr[1], line_num_of_statement)
-            operand2 = self.__evaluate_expression(env, expr[2], line_num_of_statement)
+            operand1 = self.__evaluate_expression(
+                env, expr[1], line_num_of_statement, inherit_level
+            )
+            operand2 = self.__evaluate_expression(
+                env, expr[2], line_num_of_statement, inherit_level
+            )
             if operand1.type() == operand2.type() and operand1.type() == Type.INT:
                 if operator not in self.binary_ops[Type.INT]:
                     self.interpreter.error(
@@ -477,7 +600,9 @@ class ObjectDef:
 
         # handle call expression: (call objref methodname p1 p2 p3)
         if operator == InterpreterBase.CALL_DEF:
-            return self.__execute_call_aux(env, expr, line_num_of_statement)
+            return self.__execute_call_aux(
+                env, expr, line_num_of_statement, inherit_level
+            )
         # handle new expression: (new classname)
         if operator == InterpreterBase.NEW_DEF:
             return self.__execute_new_aux(env, expr, line_num_of_statement)
@@ -489,14 +614,24 @@ class ObjectDef:
 
     # this method is a helper used by call statements and call expressions
     # (call object_ref/me methodname p1 p2 p3)
-    def __execute_call_aux(self, env, code, line_num_of_statement):
+    def __execute_call_aux(self, env, code, line_num_of_statement, inherit_level):
         # determine which object we want to call the method on
         obj_name = code[1]
+        inherit_level = -1
         if obj_name == InterpreterBase.ME_DEF:
             obj = self
+        elif obj_name == InterpreterBase.SUPER_DEF:
+            if self.class_def.inherit_class == None:
+                self.interpreter.error(
+                    ErrorType.TYPE_ERROR,
+                    f"invalid call to super object by class {self.class_def.name}",
+                    line_num_of_statement,
+                )
+            obj = self
+            inherit_level = 0
         else:
             obj = self.__evaluate_expression(
-                env, obj_name, line_num_of_statement
+                env, obj_name, line_num_of_statement, inherit_level
             ).value()
         # prepare the actual arguments for passing
         if obj is None:
@@ -506,9 +641,13 @@ class ObjectDef:
         actual_args = []
         for expr in code[3:]:
             actual_args.append(
-                self.__evaluate_expression(env, expr, line_num_of_statement)
+                self.__evaluate_expression(
+                    env, expr, line_num_of_statement, inherit_level
+                )
             )
-        return obj.call_method(code[2], actual_args, line_num_of_statement)
+        return obj.call_method(
+            code[2], actual_args, line_num_of_statement, inherit_level
+        )
 
     def __map_method_names_to_method_definitions(self):
         self.methods = {}
@@ -522,6 +661,35 @@ class ObjectDef:
                 self.interpreter, field.default_field_value, field.field_type
             )
             self.fields[field.field_name] = value
+
+    def __map_inherit_method_names_to_method_definitions(self):
+        self.inherit_methods = []
+        super_class = self.class_def.inherit_class
+        while super_class is not None:  # recursively add inherit methods
+            super_class_def = self.interpreter.get_class_dict()[super_class]
+            super_class_methods = {}
+
+            for method in super_class_def.get_methods():
+                super_class_methods[method.method_name] = method
+
+            self.inherit_methods.append(super_class_methods)
+            super_class = super_class_def.inherit_class
+
+    def __map_inherit_fields_to_values(self):
+        self.inherit_fields = []
+        super_class = self.class_def.inherit_class
+        while super_class is not None:  # recursively add inherit methods
+            super_class_def = self.interpreter.get_class_dict()[super_class]
+            super_class_fields = {}
+
+            for field in super_class_def.get_fields():
+                value = create_value(
+                    self.interpreter, field.default_field_value, field.field_type
+                )
+                super_class_fields[field.field_name] = value
+
+            self.inherit_fields.append(super_class_fields)
+            super_class = super_class_def.inherit_class
 
     def __create_map_of_operations_to_lambdas(self):
         self.binary_op_list = [
