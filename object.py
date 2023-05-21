@@ -77,7 +77,7 @@ class ObjectDef:
         # Handle defualt return value
         method_type = method_info.method_type
         return self.__get_defualt_return_type(method_type)
-        
+
     def __get_defualt_return_type(self, method_type):
         if method_type == Type.BOOL:
             return Value(Type.BOOL, False)
@@ -86,7 +86,7 @@ class ObjectDef:
         if method_type == Type.STRING:
             return Value(Type.STRING, "")
         if method_type == Type.CLASS:
-            return Value(Type.CLASS, None, None) #null value
+            return Value(Type.CLASS, None, None)  # null value
 
     def __execute_statement(self, env, code, method_name):
         """
@@ -117,10 +117,94 @@ class ObjectDef:
             return self.__execute_input(env, code, False)
         if tok == InterpreterBase.PRINT_DEF:
             return self.__execute_print(env, code)
+        if tok == InterpreterBase.LET_DEF:
+            return self.__execute_let(env, code, method_name)
 
         self.interpreter.error(
             ErrorType.SYNTAX_ERROR, "unknown statement " + tok, tok.line_num
         )
+
+    def __execute_let(self, outside_env, code, method_name):
+        def get_local_variable_type(local_variable_type):
+            if local_variable_type == InterpreterBase.INT_DEF:
+                return Type.INT
+            if local_variable_type == InterpreterBase.BOOL_DEF:
+                return Type.BOOL
+            if local_variable_type == InterpreterBase.STRING_DEF:
+                return Type.STRING
+            if local_variable_type in self.interpreter.get_class_set():
+                return Type.CLASS
+            self.interpreter.error(
+                ErrorType.NAME_ERROR,
+                f"{local_variable_type} is invalid",
+                code[0].line_num,
+            )
+
+        if (
+            len(code) < 2
+        ):  # let statement must always have at least one statement to execute
+            self.interpreter.error(
+                ErrorType.SYNTAX_ERROR,
+                f"let statements must always have at least one statement to execute",
+                code[0].line_num,
+            )
+        local_variables = code[1]
+        added_local_variables_set = set()
+        env = EnvironmentManager()
+
+        # copy existing env
+        env.copy(outside_env)
+
+        for local_variable in local_variables:
+            if len(local_variable) != 3:  # check syntax
+                self.interpreter.error(
+                    ErrorType.SYNTAX_ERROR,
+                    f"syntax error in let statement",
+                    code[0].line_num,
+                )
+
+            local_variable_type = get_local_variable_type(local_variable[0])
+            local_variable_name = local_variable[1]
+
+            if local_variable_name in added_local_variables_set:
+                self.interpreter.error(
+                    ErrorType.NAME_ERROR,
+                    f"Can't define two local variables with the same name",
+                    code[0].line_num,
+                )
+
+            local_variable_value = create_infered_value(local_variable[2])
+            local_variable_class_type = (
+                local_variable[0] if local_variable_type == Type.CLASS else None
+            )
+            if (
+                local_variable_value is None
+                or local_variable_value.type() != local_variable_type
+            ):
+                self.interpreter.error(
+                    ErrorType.TYPE_ERROR,
+                    f"{local_variable_name} does not have the same type as {local_variable[0]}",
+                    code[0].line_num,
+                )
+
+            env.set(
+                local_variable_name,
+                local_variable_value,
+                local_variable_type,
+                local_variable_class_type,
+            )
+            added_local_variables_set.add(local_variable_name)
+
+        for statement in code[2:]:
+            status, return_value = self.__execute_statement(env, statement, method_name)
+            if status == ObjectDef.STATUS_RETURN:
+                return (
+                    status,
+                    return_value,
+                )  # could be a valid return of a value or an error
+        # if we run thru the entire block without a return, then just return proceed
+        # we don't want the calling block to exit with a return
+        return ObjectDef.STATUS_PROCEED, None
 
     # (begin (statement1) (statement2) ... (statementn))
     def __execute_begin(self, env, code, method_name):
@@ -156,7 +240,9 @@ class ObjectDef:
         if len(code) == 1:
             # [return] with no return expression
             if method_type != Type.VOID:
-                return ObjectDef.STATUS_RETURN, self.__get_defualt_return_type(method_type)
+                return ObjectDef.STATUS_RETURN, self.__get_defualt_return_type(
+                    method_type
+                )
 
             value = create_value(
                 self.interpreter,
@@ -169,6 +255,7 @@ class ObjectDef:
             self.interpreter.error(
                 ErrorType.TYPE_ERROR,
                 f"{method_name} of type void should not have a return value",
+                code[0].line_num,
             )
 
         return_value = self.__evaluate_expression(env, code[1], code[0].line_num)
@@ -176,6 +263,7 @@ class ObjectDef:
             self.interpreter.error(
                 ErrorType.TYPE_ERROR,
                 f"{method_name} have wrong return type",
+                code[0].line_num,
             )
 
         if method_type == Type.CLASS:
@@ -184,6 +272,7 @@ class ObjectDef:
                     self.interpreter.error(
                         ErrorType.TYPE_ERROR,
                         f"{method_name} have wrong return type",
+                        code[0].line_num,
                     )
 
         return ObjectDef.STATUS_RETURN, return_value

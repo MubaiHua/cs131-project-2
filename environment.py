@@ -29,3 +29,8 @@ class EnvironmentManager:
         Set data associated with a variable name.
         """
         self.environment[symbol] = (value, type, class_type)
+
+    def copy(self, outside_env):
+        for env_var_name in outside_env.environment:
+            (value, type, class_type) = outside_env.environment[env_var_name]
+            self.set(env_var_name, value, type, class_type)

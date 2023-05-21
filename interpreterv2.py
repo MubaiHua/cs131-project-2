@@ -31,6 +31,7 @@ class Interpreter(InterpreterBase):
             super().error(
                 ErrorType.SYNTAX_ERROR, f"Parse error on program: {parsed_program}"
             )
+        print(parsed_program)
         self.set_class_set(parsed_program)
         self.__map_class_names_to_class_defs(parsed_program)
 
