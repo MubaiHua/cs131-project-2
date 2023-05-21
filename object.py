@@ -74,8 +74,19 @@ class ObjectDef:
         # value back to the caller
         if status == ObjectDef.STATUS_RETURN:
             return return_value
-        # The method didn't explicitly return a value, so return a value of type nothing
-        return Value(InterpreterBase.NOTHING_DEF)
+        # Handle defualt return value
+        method_type = method_info.method_type
+        return self.__get_defualt_return_type(method_type)
+        
+    def __get_defualt_return_type(self, method_type):
+        if method_type == Type.BOOL:
+            return Value(Type.BOOL, False)
+        if method_type == Type.INT:
+            return Value(Type.INT, 0)
+        if method_type == Type.STRING:
+            return Value(Type.STRING, "")
+        if method_type == Type.CLASS:
+            return Value(Type.CLASS, None, None) #null value
 
     def __execute_statement(self, env, code, method_name):
         """
@@ -145,10 +156,7 @@ class ObjectDef:
         if len(code) == 1:
             # [return] with no return expression
             if method_type != Type.VOID:
-                self.interpreter.error(
-                    ErrorType.TYPE_ERROR,
-                    f"{method_name} should have a return value",
-                )
+                return ObjectDef.STATUS_RETURN, self.__get_defualt_return_type(method_type)
 
             value = create_value(
                 self.interpreter,
