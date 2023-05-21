@@ -73,7 +73,7 @@ def create_value(interpreter, val, type):
             )
         return Value(Type.INT, int(val))
     if val == InterpreterBase.NULL_DEF:
-        if type not in interpreter.get_class_list():
+        if type not in interpreter.get_class_set():
             interpreter.error(
                 ErrorType.NAME_ERROR,
                 f"Class {type} does not exist"

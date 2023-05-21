@@ -144,7 +144,7 @@ class ClassDef:
 
                 self.methods.append(
                     MethodDef(
-                        member[1],
+                        method_type,
                         member[2],
                         checked_params,
                         member[4],
@@ -162,7 +162,7 @@ class ClassDef:
         ]:
             self.all_type_sets.add(type)
 
-        for class_type in self.interpreter.get_class_list():
+        for class_type in self.interpreter.get_class_set():
             self.all_type_sets.add(class_type)
 
     def get_all_method_types(self):
@@ -175,7 +175,7 @@ class ClassDef:
         ]:
             self.all_method_type_sets.add(type)
 
-        for class_type in self.interpreter.get_class_list():
+        for class_type in self.interpreter.get_class_set():
             self.all_method_type_sets.add(class_type)
 
     def init_param(self, type, name):
@@ -185,7 +185,7 @@ class ClassDef:
             return ParamDef(Type.BOOL, name)
         if type == InterpreterBase.STRING_DEF:
             return ParamDef(Type.STRING, name)
-        if type in self.interpreter.get_class_list():
+        if type in self.interpreter.get_class_set():
             return ParamDef(Type.CLASS, name, type)
         self.interpreter.error(
             ErrorType.TYPE_ERROR,
@@ -201,7 +201,7 @@ class ClassDef:
             return Type.STRING
         if type == InterpreterBase.VOID_DEF:
             return Type.VOID
-        if type in self.interpreter.get_class_list():
+        if type in self.interpreter.get_class_set():
             return Type.CLASS
         self.interpreter.error(
             ErrorType.TYPE_ERROR,

@@ -19,6 +19,7 @@ class Interpreter(InterpreterBase):
         self.trace_output = trace_output
         self.main_object = None
         self.class_index = {}
+        self.class_set = set()
 
     def run(self, program):
         """
@@ -26,11 +27,11 @@ class Interpreter(InterpreterBase):
         Delegates parsing to the provided BParser class in bparser.py.
         """
         status, parsed_program = BParser.parse(program)
-        print(parsed_program)
         if not status:
             super().error(
                 ErrorType.SYNTAX_ERROR, f"Parse error on program: {parsed_program}"
             )
+        self.set_class_set(parsed_program)
         self.__map_class_names_to_class_defs(parsed_program)
 
         # instantiate main class
@@ -76,8 +77,19 @@ class Interpreter(InterpreterBase):
                     )
                 self.class_index[item[1]] = ClassDef(item, self)
 
-    def get_class_list(self):
-        return self.class_index
+    def get_class_set(self):
+        return self.class_set
+    
+    def set_class_set(self, program):
+        for item in program:
+            if item[0] == InterpreterBase.CLASS_DEF:
+                if item[1] in self.class_set:
+                    super().error(
+                        ErrorType.TYPE_ERROR,
+                        f"Duplicate class name {item[1]}",
+                        item[0].line_num,
+                    )
+                self.class_set.add(item[1])
 
 
 def read_txt_file(file_path):

@@ -49,7 +49,7 @@ class ObjectDef:
         for formal, actual in zip(method_info.formal_params, actual_params):
             if formal.param_type != actual.type():
                 self.interpreter.error(
-                    ErrorType.TYPE_ERROR,
+                    ErrorType.NAME_ERROR,
                     f"Parameter {formal.param_name} does not have the same type as the assigned value {actual.value()}",
                     line_num_of_caller,
                 )
@@ -58,7 +58,7 @@ class ObjectDef:
                 if actual.value() != None:  # if the value is not null
                     if formal.param_class_type != actual.class_type():
                         self.interpreter.error(
-                            ErrorType.TYPE_ERROR,
+                            ErrorType.NAME_ERROR,
                             f"Value {actual.value()} does not match the {formal.param_name} type",
                             line_num_of_caller,
                         )
