@@ -144,11 +144,12 @@ class ObjectDef:
             if formal.param_type == Type.CLASS:
                 if actual.value() != None:  # if the value is not null
                     if formal.param_class_type != actual.class_type():
-                        self.interpreter.error(
-                            ErrorType.NAME_ERROR,
-                            f"Value {actual.value()} does not match the {formal.param_name} type",
-                            line_num_of_caller,
-                        )
+                        if not self.interpreter.is_parent_class(actual.class_type(), formal.param_class_type):
+                            self.interpreter.error(
+                                ErrorType.NAME_ERROR,
+                                f"Value {actual.value()} does not match the {formal.param_name} type",
+                                line_num_of_caller,
+                            )
 
             env.set(
                 formal.param_name, actual, formal.param_type, formal.param_class_type
@@ -172,6 +173,8 @@ class ObjectDef:
             return Value(Type.INT, 0)
         if method_type == Type.STRING:
             return Value(Type.STRING, "")
+        if method_type == Type.VOID:
+            return Value(Type.CLASS, None, None)
         if method_type == Type.CLASS:
             return Value(Type.CLASS, None, None)  # null value
 
@@ -366,11 +369,12 @@ class ObjectDef:
         if method_type == Type.CLASS:
             if return_value.value() != None:
                 if method_info.method_class_type != return_value.class_type():
-                    self.interpreter.error(
-                        ErrorType.TYPE_ERROR,
-                        f"{method_name} have wrong return type",
-                        code[0].line_num,
-                    )
+                    if not self.interpreter.is_parent_class(return_value.class_type(), method_info.method_class_type):
+                        self.interpreter.error(
+                            ErrorType.TYPE_ERROR,
+                            f"{method_name} have wrong return type",
+                            code[0].line_num,
+                        )
 
         return ObjectDef.STATUS_RETURN, return_value
 
@@ -539,6 +543,8 @@ class ObjectDef:
             value = create_infered_value(expr)
             if value is not None:
                 return value
+            if expr == InterpreterBase.ME_DEF:
+                return Value(Type.CLASS, self, self.class_def.name)
             self.interpreter.error(
                 ErrorType.NAME_ERROR,
                 "invalid field or parameter " + expr,
@@ -618,10 +624,10 @@ class ObjectDef:
 
     # this method is a helper used by call statements and call expressions
     # (call object_ref/me methodname p1 p2 p3)
-    def __execute_call_aux(self, env, code, line_num_of_statement, inherit_level):
+    def __execute_call_aux(self, env, code, line_num_of_statement, prev_inherit_level):
         # determine which object we want to call the method on
-        obj_name = code[1]
         inherit_level = -1
+        obj_name = code[1]
         if obj_name == InterpreterBase.ME_DEF:
             obj = self
         elif obj_name == InterpreterBase.SUPER_DEF:
@@ -632,7 +638,7 @@ class ObjectDef:
                     line_num_of_statement,
                 )
             obj = self
-            inherit_level = 0
+            inherit_level = prev_inherit_level+1
         else:
             obj = self.__evaluate_expression(
                 env, obj_name, line_num_of_statement, inherit_level
