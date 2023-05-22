@@ -117,7 +117,9 @@ class ObjectDef:
                                     flag = False
                                     break
                         if flag:
-                            method_info = self.inherit_methods[inherit_level][method_name]
+                            method_info = self.inherit_methods[inherit_level][
+                                method_name
+                            ]
                             break
                     else:
                         inherit_level += 1
@@ -144,7 +146,9 @@ class ObjectDef:
             if formal.param_type == Type.CLASS:
                 if actual.value() != None:  # if the value is not null
                     if formal.param_class_type != actual.class_type():
-                        if not self.interpreter.is_parent_class(actual.class_type(), formal.param_class_type):
+                        if not self.interpreter.is_parent_class(
+                            actual.class_type(), formal.param_class_type
+                        ):
                             self.interpreter.error(
                                 ErrorType.NAME_ERROR,
                                 f"Value {actual.value()} does not match the {formal.param_name} type",
@@ -155,9 +159,12 @@ class ObjectDef:
                 formal.param_name, actual, formal.param_type, formal.param_class_type
             )
         # since each method has a single top-level statement, execute it.
-        status, return_value = self.__execute_statement(
-            env, method_info.code, method_name, inherit_level
-        )
+        if method_info.code == None:
+            status = ObjectDef.STATUS_PROCEED
+        else:
+            status, return_value = self.__execute_statement(
+                env, method_info.code, method_name, inherit_level
+            )
         # if the method explicitly used the (return expression) statement to return a value, then return that
         # value back to the caller
         if status == ObjectDef.STATUS_RETURN:
@@ -176,7 +183,7 @@ class ObjectDef:
         if method_type == Type.VOID:
             return Value(Type.CLASS, None, None)
         if method_type == Type.CLASS:
-            return Value(Type.CLASS, None, None)  # null value
+            return Value(Type.CLASS, None, method_type)  # null value
 
     def __execute_statement(self, env, code, method_name, inherit_level):
         """
@@ -369,12 +376,18 @@ class ObjectDef:
         if method_type == Type.CLASS:
             if return_value.value() != None:
                 if method_info.method_class_type != return_value.class_type():
-                    if not self.interpreter.is_parent_class(return_value.class_type(), method_info.method_class_type):
+                    if not self.interpreter.is_parent_class(
+                        return_value.class_type(), method_info.method_class_type
+                    ):
                         self.interpreter.error(
                             ErrorType.TYPE_ERROR,
                             f"{method_name} have wrong return type",
                             code[0].line_num,
                         )
+
+        if method_type == Type.CLASS:
+            if return_value.value() == None and return_value.class_type() == None:
+                return_value = Value(Type.CLASS, None, method_info.method_class_type)
 
         return ObjectDef.STATUS_RETURN, return_value
 
@@ -461,16 +474,19 @@ class ObjectDef:
 
         # check class type of class reference
         if target_field.type() == Type.CLASS:
-            if value.value() != None:  # if the value is not null
-                if target_field.class_type() != value.class_type():
-                    if not self.interpreter.is_parent_class(
-                        value.class_type(), target_field.class_type()
-                    ):
-                        self.interpreter.error(
-                            ErrorType.TYPE_ERROR,
-                            f"{var_name} does not have the same type as the assigned value",
-                            line_num,
-                        )
+            if (
+                target_field.class_type() != value.class_type()
+                and value.class_type() != None
+            ):
+                if not self.interpreter.is_parent_class(
+                    value.class_type(), target_field.class_type()
+                ):
+                    self.interpreter.error(
+                        ErrorType.TYPE_ERROR,
+                        f"{var_name} does not have the same type as the assigned value",
+                        line_num,
+                    )
+
         if inherit_level == -1:
             self.fields[var_name] = value
         else:
@@ -504,7 +520,9 @@ class ObjectDef:
     # or a boolean expression in parens, like (> 5 a)
     def __execute_while(self, env, code, method_name, inherit_level):
         while True:
-            condition = self.__evaluate_expression(env, code[1], code[0].line_num, inherit_level)
+            condition = self.__evaluate_expression(
+                env, code[1], code[0].line_num, inherit_level
+            )
             if condition.type() != Type.BOOL:
                 self.interpreter.error(
                     ErrorType.TYPE_ERROR,
@@ -598,7 +616,9 @@ class ObjectDef:
                 line_num_of_statement,
             )
         if operator in self.unary_op_list:
-            operand = self.__evaluate_expression(env, expr[1], line_num_of_statement, inherit_level)
+            operand = self.__evaluate_expression(
+                env, expr[1], line_num_of_statement, inherit_level
+            )
             if operand.type() == Type.BOOL:
                 if operator not in self.unary_ops[Type.BOOL]:
                     self.interpreter.error(
@@ -638,7 +658,7 @@ class ObjectDef:
                     line_num_of_statement,
                 )
             obj = self
-            inherit_level = prev_inherit_level+1
+            inherit_level = prev_inherit_level + 1
         else:
             obj = self.__evaluate_expression(
                 env, obj_name, line_num_of_statement, inherit_level
@@ -750,11 +770,27 @@ class ObjectDef:
             "!=": lambda a, b: Value(Type.BOOL, a.value() != b.value()),
         }
         self.binary_ops[Type.CLASS] = {
-            "==": lambda a, b: Value(Type.BOOL, a.value() == b.value()),
-            "!=": lambda a, b: Value(Type.BOOL, a.value() != b.value()),
+            "==": lambda a, b: Value(Type.BOOL, self.compare_reference(a, b)),
+            "!=": lambda a, b: Value(Type.BOOL, not self.compare_reference(a, b)),
         }
 
         self.unary_ops = {}
         self.unary_ops[Type.BOOL] = {
             "!": lambda a: Value(Type.BOOL, not a.value()),
         }
+
+    def compare_reference(self, a, b):
+        if a.class_type() == b.class_type():
+            return a.value() == b.value()
+        if a.value() == None and a.class_type() == None:
+            return a.value() == b.value()
+        if b.value() == None and b.class_type() == None:
+            return a.value() == b.value()
+        if self.interpreter.is_parent_class(
+            a.class_type(), b.class_type()
+        ) or self.interpreter.is_parent_class(b.class_type(), a.class_type()):
+            return a.value() == b.value()
+        self.interpreter.error(
+            ErrorType.TYPE_ERROR,
+            "operator == applied to two incompatible types",
+        )

@@ -47,32 +47,37 @@ def create_value(interpreter, val, type):
     if val == InterpreterBase.TRUE_DEF:
         if type != InterpreterBase.BOOL_DEF:
             interpreter.error(
-                ErrorType.NAME_ERROR,
+                ErrorType.TYPE_ERROR,
                 f"Value {val} is not of type {type}"
             )
         return Value(Type.BOOL, True)
     if val == InterpreterBase.FALSE_DEF:
         if type != InterpreterBase.BOOL_DEF:
             interpreter.error(
-                ErrorType.NAME_ERROR,
+                ErrorType.TYPE_ERROR,
                 f"Value {val} is not of type {type}"
             )
         return Value(Type.BOOL, False)
     if val[0] == '"':
         if type != InterpreterBase.STRING_DEF:
             interpreter.error(
-                ErrorType.NAME_ERROR,
+                ErrorType.TYPE_ERROR,
                 f"Value {val} is not of type {type}"
             )
         return Value(Type.STRING, val.strip('"'))
     if val.lstrip('-').isnumeric():
         if type != InterpreterBase.INT_DEF:
             interpreter.error(
-                ErrorType.NAME_ERROR,
+                ErrorType.TYPE_ERROR,
                 f"Value {val} is not of type {type}"
             )
         return Value(Type.INT, int(val))
     if val == InterpreterBase.NULL_DEF:
+        if type in [InterpreterBase.INT_DEF, InterpreterBase.STRING_DEF, InterpreterBase.BOOL_DEF]:
+            interpreter.error(
+                ErrorType.TYPE_ERROR,
+                f"Value {val} is not of type {type}"
+            )
         if type not in interpreter.get_class_set():
             interpreter.error(
                 ErrorType.NAME_ERROR,

@@ -121,6 +121,7 @@ class ClassDef:
                 # process method params
                 params = member[3]
                 checked_params = []
+                params_set = set()
                 for param in params:
                     if len(param) != 2:
                         self.interpreter.error(
@@ -131,6 +132,13 @@ class ClassDef:
 
                     type = param[0]
                     name = param[1]
+                    if name in params_set:
+                        self.interpreter.error(
+                            ErrorType.NAME_ERROR,
+                            f"duplicate formal param name {name}",
+                            member[0].line_num,
+                        )
+
                     if type not in self.all_type_sets:
                         self.interpreter.error(
                             ErrorType.TYPE_ERROR,
@@ -139,16 +147,20 @@ class ClassDef:
                         )
 
                     checked_params.append(self.init_param(type, name))
+                    params_set.add(name)
 
                 method_type = self.get_method_type(member[1])
                 method_class_type = member[1] if method_type == Type.CLASS else None
-
+                if len(member) <=4:
+                    code = None
+                else:
+                    code = member[4]
                 self.methods.append(
                     MethodDef(
                         method_type,
                         member[2],
                         checked_params,
-                        member[4],
+                        code,
                         method_class_type,
                     )
                 )
