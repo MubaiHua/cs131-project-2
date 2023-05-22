@@ -41,10 +41,7 @@ class ObjectDef:
 
         for param in actual_params:
             if param.type() == Type.CLASS:
-                if param.value() != None:
-                    list_of_actual_params_type.append(
-                        (param.type(), param.class_type())
-                    )
+                list_of_actual_params_type.append((param.type(), param.class_type()))
             else:
                 list_of_actual_params_type.append(param.type())
 
@@ -61,7 +58,7 @@ class ObjectDef:
                                 formal.param_class_type
                                 != list_of_actual_params_type[i][1]
                             ):
-                                if not self.interpreter.is_parent_class(
+                                if list_of_actual_params_type[i][1] is not None and not self.interpreter.is_parent_class(
                                     list_of_actual_params_type[i][1],
                                     formal.param_class_type,
                                 ):
