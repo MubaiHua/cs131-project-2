@@ -454,12 +454,14 @@ class ObjectDef:
                     ErrorType.NAME_ERROR, "unknown variable " + var_name, line_num
                 )
             target_field = self.fields[var_name]
+            target_field_class_type = self.field_initial_class_types[var_name]
         else:
             if var_name not in self.inherit_fields[inherit_level]:
                 self.interpreter.error(
                     ErrorType.NAME_ERROR, "unknown variable " + var_name, line_num
                 )
             target_field = self.inherit_fields[inherit_level][var_name]
+            target_field_class_type = self.inherit_fields_initial_class_types[inherit_level][var_name]
 
         # check assignment type
         if target_field.type() != value.type():
@@ -472,11 +474,11 @@ class ObjectDef:
         # check class type of class reference
         if target_field.type() == Type.CLASS:
             if (
-                target_field.class_type() != value.class_type()
+                target_field_class_type != value.class_type()
                 and value.class_type() != None
             ):
                 if not self.interpreter.is_parent_class(
-                    value.class_type(), target_field.class_type()
+                    value.class_type(), target_field_class_type
                 ):
                     self.interpreter.error(
                         ErrorType.TYPE_ERROR,
@@ -683,11 +685,13 @@ class ObjectDef:
 
     def __map_fields_to_values(self):
         self.fields = {}
+        self.field_initial_class_types = {}
         for field in self.class_def.get_fields():
             value = create_value(
                 self.interpreter, field.default_field_value, field.field_type
             )
             self.fields[field.field_name] = value
+            self.field_initial_class_types[field.field_name] = field.field_type if value.type() == Type.CLASS else None
 
     def __map_inherit_method_names_to_method_definitions(self):
         self.inherit_methods = []
@@ -704,18 +708,22 @@ class ObjectDef:
 
     def __map_inherit_fields_to_values(self):
         self.inherit_fields = []
+        self.inherit_fields_initial_class_types = []
         super_class = self.class_def.inherit_class
         while super_class is not None:  # recursively add inherit methods
             super_class_def = self.interpreter.get_class_dict()[super_class]
             super_class_fields = {}
+            field_initial_class_types = {}
 
             for field in super_class_def.get_fields():
                 value = create_value(
                     self.interpreter, field.default_field_value, field.field_type
                 )
                 super_class_fields[field.field_name] = value
+                field_initial_class_types[field.field_name] = field.field_type if value.type() == Type.CLASS else None
 
             self.inherit_fields.append(super_class_fields)
+            self.inherit_fields_initial_class_types.append(field_initial_class_types)
             super_class = super_class_def.inherit_class
 
     def __create_map_of_operations_to_lambdas(self):
